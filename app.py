@@ -5,13 +5,12 @@ import os
 from datetime import datetime, date, timedelta
 
 # --- Configuration ---
-st.set_page_config(page_title="CIA Booking Shared", page_icon="🏗️", layout="wide")
+st.set_page_config(page_title="CIA Shared Booking Safe", page_icon="🏗️", layout="wide")
 
-# ใส่ API Key ของคุณที่นี่
-API_KEY = "" 
+API_KEY = "" # ใส่ API Key ของคุณที่นี่
 DB_FILE = "bookings_db.json"
 
-# --- Database Functions (ระบบเก็บข้อมูลส่วนกลาง) ---
+# --- Database Functions ---
 def load_db():
     if not os.path.exists(DB_FILE):
         with open(DB_FILE, 'w', encoding='utf-8') as f:
@@ -33,7 +32,7 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Kanit', sans-serif; }
     .stApp { background-color: #f8fafc; }
-    .room-card { background-color: white; border-radius: 15px; border: 1px solid #e2e8f0; padding: 10px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .room-card { background-color: white; border-radius: 15px; border: 1px solid #e2e8f0; padding: 10px; margin-bottom: 10px; }
     .tag { padding: 2px 8px; border-radius: 5px; font-size: 10px; font-weight: bold; color: white; }
     .tag-theater { background-color: #f97316; }
     .tag-meeting { background-color: #3b82f6; }
@@ -62,82 +61,55 @@ def is_conflict(room_id, booking_date, start, duration):
                 return True
     return False
 
-def call_gemini(prompt):
-    if not API_KEY: return "กรุณาใส่ API Key"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
-    payload = {"contents": [{"parts": [{"text": f"You are a Civil Engineering AI. Give 3 steps for: {prompt} in Thai language."}]}]}
-    try:
-        res = requests.post(url, json=payload, timeout=5)
-        return res.json()['candidates'][0]['content']['parts'][0]['text']
-    except: return "AI ไม่พร้อมใช้งานในขณะนี้"
-
-# --- Main App ---
+# --- App Layout ---
 st.title("🏗️ CIA SHARED BOOKING")
-st.caption("ระบบจองพื้นที่ส่วนกลาง - ข้อมูลอัปเดตเรียลไทม์สำหรับทุกคน")
+st.caption("ข้อมูลส่วนกลาง | ทุกคนเห็นประวัติได้ | เจ้าของเท่านั้นที่ลบได้")
 
-# Initialize Local State for AI only
-if 'ai_res' not in st.session_state: st.session_state.ai_res = ""
 if 'sel_room' not in st.session_state: st.session_state.sel_room = None
 
-tabs = st.tabs(["🔍 ค้นหาและจอง", "📋 ประวัติการจองทั้งหมด"])
+tabs = st.tabs(["🔍 ค้นหาและจอง", "📋 ตารางการจองทั้งหมด"])
 
 # --- TAB 1: Booking ---
 with tabs[0]:
-    # AI Assistant (Optional)
-    with st.expander("✨ ปรึกษา AI วางแผนงานก่อนจอง"):
-        ai_q = st.text_input("ระบุโปรเจกต์ของคุณ")
-        if st.button("ถาม AI"):
-            st.session_state.ai_res = call_gemini(ai_q)
-        if st.session_state.ai_res: st.info(st.session_state.ai_res)
-
-    st.divider()
-
-    # แสดงแบบฟอร์มเมื่อเลือกห้อง
     if st.session_state.sel_room:
         room = next(r for r in ROOM_DATA if r['id'] == st.session_state.sel_room)
-        st.success(f"📍 กำลังจอง: **{room['name']}**")
+        st.info(f"📍 กำลังทำรายการจอง: **{room['name']}**")
         with st.form("book_form"):
             col1, col2 = st.columns(2)
-            u_name = col1.text_input("ชื่อผู้จอง")
-            u_sid = col2.text_input("รหัสนักศึกษา")
+            u_name = col1.text_input("ชื่อผู้จอง (ภาษาไทย)")
+            u_sid = col2.text_input("รหัสนักศึกษา (จะใช้เป็นรหัสในการยกเลิก)")
             
             col3, col4, col5 = st.columns(3)
-            # จองล่วงหน้าได้ 1 วัน
             u_date = col3.date_input("วันที่จอง", min_value=date.today(), max_value=date.today() + timedelta(days=1))
             u_start = col4.selectbox("เริ่มเวลา", range(9, 17), format_func=lambda x: f"{x:02d}:00 น.")
             u_dur = col5.selectbox("ระยะเวลา (ชม.)", [1, 2, 3, 4])
             
-            c_btn1, c_btn2 = st.columns(2)
-            if c_btn1.form_submit_button("ยืนยันการจอง", use_container_width=True):
+            sub_col1, sub_col2 = st.columns(2)
+            if sub_col1.form_submit_button("ยืนยันการจอง", use_container_width=True):
                 if not u_name or not u_sid:
-                    st.error("กรุณากรอกข้อมูลให้ครบ")
+                    st.error("กรุณากรอกชื่อและรหัสนักศึกษา")
                 elif u_start + u_dur > 17:
-                    st.error("เวลาที่เลือกเกิน 17:00 น.")
+                    st.error("เวลาที่จองเกิน 17:00 น.")
                 elif is_conflict(room['id'], u_date, u_start, u_dur):
-                    st.error("❌ มีคนจองเวลานี้ไปแล้ว! โปรดตรวจสอบตารางการจอง")
+                    st.error("❌ ช่วงเวลานี้ถูกจองไปแล้ว กรุณาดูตารางในหน้าประวัติ")
                 else:
-                    current_db = load_db()
-                    current_db.append({
+                    db = load_db()
+                    db.append({
                         "room_id": room['id'], "room_name": room['name'],
-                        "name": u_name, "sid": u_sid, "date": str(u_date),
+                        "name": u_name, "sid": str(u_sid), "date": str(u_date),
                         "start": u_start, "duration": u_dur, "timestamp": str(datetime.now())
                     })
-                    save_db(current_db)
-                    st.balloons()
+                    save_db(db)
+                    st.success("✅ จองสำเร็จ!")
                     st.session_state.sel_room = None
                     st.rerun()
-            
-            if c_btn2.form_submit_button("ยกเลิก"):
+            if sub_col2.form_submit_button("ยกเลิก"):
                 st.session_state.sel_room = None
                 st.rerun()
-    
-    # Filter
-    f_col1, f_col2 = st.columns([2, 1])
-    search = f_col1.text_input("🔍 ค้นหาห้อง...")
-    f_type = f_col2.selectbox("ประเภท", ["ทั้งหมด", "theater", "meeting", "table"])
-    
-    # Grid
-    filtered = [r for r in ROOM_DATA if (f_type == "ทั้งหมด" or r['type'] == f_type) and (search.lower() in r['name'].lower())]
+
+    # Filters & Grid
+    search = st.text_input("🔍 ค้นหาห้อง...")
+    filtered = [r for r in ROOM_DATA if search.lower() in r['name'].lower()]
     
     for i in range(0, len(filtered), 4):
         cols = st.columns(4)
@@ -146,36 +118,54 @@ with tabs[0]:
                 st.markdown(f"""
                 <div class="room-card">
                     <img src="{room['img']}" style="width:100%; border-radius:10px; height:100px; object-fit:cover;">
-                    <h5 style="margin:5px 0 0 0;">{room['name']}</h5>
+                    <h6 style="margin:5px 0 0 0;">{room['name']}</h6>
                     <span class="tag tag-{room['type']}">{room['type'].upper()}</span>
                 </div>
                 """, unsafe_allow_html=True)
-                if st.button(f"เลือก {room['name']}", key=room['id']):
+                if st.button(f"จอง {room['name']}", key=room['id']):
                     st.session_state.sel_room = room['id']
                     st.rerun()
 
-# --- TAB 2: Shared History ---
+# --- TAB 2: History & Safe Delete ---
 with tabs[1]:
-    st.subheader("📋 ตารางการใช้งานทั้งหมด")
+    st.subheader("📋 รายการจองทั้งหมดในระบบ")
     all_data = load_db()
     
     if not all_data:
-        st.write("ยังไม่มีข้อมูลการจอง")
+        st.write("ไม่มีข้อมูลการจอง")
     else:
-        # เรียงลำดับตามวันที่และเวลา
+        # เรียงลำดับ วันที่ และ เวลา
         sorted_data = sorted(all_data, key=lambda x: (x['date'], x['start']))
         
-        # กรองเฉพาะวันนี้และอนาคต (ลบประวัติเก่าอัตโนมัติในการแสดงผล)
-        today_str = str(date.today())
-        
-        for b in sorted_data:
-            is_today = "วันนี้" if b['date'] == today_str else "พรุ่งนี้"
-            with st.expander(f"📅 {b['date']} ({is_today}) | 🕒 {b['start']:02d}:00 | 📍 {b['room_name']}"):
-                st.write(f"**ผู้จอง:** {b['name']} ({b['sid']})")
+        for idx, b in enumerate(sorted_data):
+            # สร้างข้อความแสดงหัวข้อ
+            is_today = "(วันนี้)" if b['date'] == str(date.today()) else "(พรุ่งนี้)"
+            header = f"📅 {b['date']} {is_today} | 🕒 {b['start']:02d}:00 น. | 📍 {b['room_name']}"
+            
+            with st.expander(header):
+                st.write(f"**ผู้จอง:** {b['name']}")
+                st.write(f"**รหัสนักศึกษา:** {'*' * (len(b['sid'])-3) + b['sid'][-3:]} (ซ่อนไว้เพื่อความเป็นส่วนตัว)")
                 st.write(f"**เวลา:** {b['start']:02d}:00 - {b['start']+b['duration']:02d}:00 น.")
-                if st.button("ยกเลิกการจองนี้ (Admin/User)", key=f"del_{b['timestamp']}"):
-                    new_db = [x for x in all_data if x['timestamp'] != b['timestamp']]
-                    save_db(new_db)
-                    st.rerun()
+                
+                st.divider()
+                
+                # ระบบการลบที่ปลอดภัย
+                st.write("⚠️ **ยกเลิกรายการจอง**")
+                verify_sid = st.text_input("กรอกรหัสนักศึกษาของคุณเพื่อยืนยันการลบ", key=f"verify_{idx}")
+                
+                if st.button("ยืนยันการยกเลิก", key=f"del_btn_{idx}", type="primary"):
+                    if verify_sid == b['sid']:
+                        new_db = [x for x in all_data if x['timestamp'] != b['timestamp']]
+                        save_db(new_db)
+                        st.success("ยกเลิกรายการสำเร็จ!")
+                        st.rerun()
+                    else:
+                        st.error("❌ รหัสนักศึกษาไม่ถูกต้อง คุณไม่มีสิทธิ์ยกเลิกรายการนี้")
 
-st.sidebar.info("💡 ข้อมูลจะถูกบันทึกลงไฟล์ bookings_db.json ทำให้ทุกคนเห็นข้อมูลเดียวกัน")
+st.sidebar.markdown("""
+### 🛠️ คู่มือการใช้งาน
+1. **เลือกห้อง** ที่ต้องการในหน้าแรก
+2. **ระบุข้อมูล** รวมถึงรหัสนักศึกษา
+3. **ตรวจสอบตาราง** ได้ที่หน้า 'ตารางการจอง'
+4. **การลบ:** ต้องใช้รหัสนักศึกษาที่ใช้จองเท่านั้นถึงจะลบได้
+""")
